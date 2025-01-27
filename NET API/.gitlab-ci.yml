@@ -1,0 +1,62 @@
+# .NET 9.0 SDK imajını kullanarak build işlemi yapıyoruz
+  FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+  
+  # Çalışma dizinini belirliyoruz. Bu dizin, kaynak kodlarının bulunduğu dizin olacak.
+  WORKDIR /app
+  
+  # Kaynak kodlarını konteynere kopyalıyoruz.
+  COPY . .
+  
+  # Projeyi restore ediyoruz
+  RUN dotnet restore
+  
+  # Projeyi derliyoruz
+  RUN dotnet build --configuration Release --output /app/build
+  
+  # Uygulama çalıştırmak için runtime imajını kullanıyoruz
+  FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+  
+  # Çalışma dizinini belirliyoruz
+  WORKDIR /app
+  
+  # Derlenen dosyaları runtime imajına kopyalıyoruz
+  COPY --from=build /app/build .
+  
+  # Uygulamanın başlatılacak dosyasını belirliyoruz
+  ENTRYPOINT ["dotnet", "YourApp.dll"]
+  
+  # Uygulamanın dinleyeceği portu açıyoruz
+  EXPOSE 5244
+
+variables:
+  OBJECTS_DIRECTORY: 'obj'
+  NUGET_PACKAGES_DIRECTORY: '.nuget'
+  SOURCE_CODE_PATH: '*/*/'
+
+cache:
+  key: "$CI_JOB_STAGE-$CI_COMMIT_REF_SLUG"
+  paths:
+    - '$SOURCE_CODE_PATH$OBJECTS_DIRECTORY/project.assets.json'
+    - '$SOURCE_CODE_PATH$OBJECTS_DIRECTORY/*.csproj.nuget.*'
+    - '$NUGET_PACKAGES_DIRECTORY'
+  policy: pull-push
+
+before_script:
+  - 'dotnet restore --packages $NUGET_PACKAGES_DIRECTORY'
+
+build:
+  stage: build
+  script:
+    - 'dotnet build --no-restore'
+
+tests:
+  stage: test
+  script:
+    - 'dotnet test --no-restore'
+
+deploy:
+  stage: deploy
+  script:
+    - docker build -t net-api .  # Docker imajını build ediyoruz
+    - docker run -d -p 5244:80 --name anadolu-yazilim net-api  # Docker konteynerini başlatıyoruz
+  environment: production
